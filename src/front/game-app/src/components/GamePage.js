@@ -77,9 +77,8 @@ function GamePage({ onNavigate, sessionId }) {
     }
   }, [puzzleData]);
 
-  // 게임 초기화 - 최초 1회만 실행
+  // 게임 초기화
   useEffect(() => {
-    // localStorage에서 게임방 ID 가져오기
     const storedGameRoomId = localStorage.getItem('currentGameRoomId');
     if (storedGameRoomId) {
       setGameRoomId(storedGameRoomId);
@@ -95,25 +94,7 @@ function GamePage({ onNavigate, sessionId }) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 빈 배열 - 최초 마운트 시에만 실행
-
-  // 새로고침 경고
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      // 게임 데이터가 로드되고 게임이 진행 중일 때만 경고
-      if (gameRoomId && puzzleData && !isGameOver) {
-        e.preventDefault();
-        e.returnValue = '게임 진행 중입니다. 새로고침하면 현재 진행 상태가 초기화됩니다.';
-        return e.returnValue;
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [gameRoomId, puzzleData, isGameOver]);
+  }, []);
 
   // 게임 데이터 로드
   const loadGameData = async (gameId) => {
@@ -128,33 +109,12 @@ function GamePage({ onNavigate, sessionId }) {
       const data = await response.json();
       console.log('게임 데이터 로드:', data);
       
-      // 새로고침으로 인한 재로드 감지
-      const isReload = performance.getEntriesByType('navigation')[0]?.type === 'reload';
-      
-      if (isReload && data.status === 'playing') {
-        // 새로고침 경고 및 게임 재시작 확인
-        const restart = window.confirm(
-          '페이지가 새로고침되었습니다.\n' +
-          '게임 진행 상태가 초기화됩니다.\n\n' +
-          '현재 스테이지를 처음부터 다시 시작하시겠습니까?\n' +
-          '(취소 시 홈으로 돌아갑니다)'
-        );
-        
-        if (!restart) {
-          localStorage.removeItem('currentGameRoomId');
-          onNavigate('home');
-          return;
-        }
-        
-        alert('게임이 재시작됩니다. 현재 스테이지를 처음부터 시작합니다.');
-      }
-      
       setGameData(data);
       setPuzzleData(data.puzzle);
       setCurrentStage(data.current_stage || 0);
       setUserScore(data.current_score || 0);
       
-      // found_differences가 있으면 복구 (서버가 제공하는 경우)
+      // found_differences가 있으면 복구
       if (data.found_differences && Array.isArray(data.found_differences)) {
         const processedDifferences = data.found_differences.map(diff => {
           if (!diff.width || !diff.height) {
