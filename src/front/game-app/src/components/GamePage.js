@@ -12,7 +12,6 @@ function GamePage({ onNavigate, sessionId }) {
   const [isGameOver, setIsGameOver] = useState(false);
   const [userScore, setUserScore] = useState(0); // 스테이지 점수
   const [finalScore, setFinalScore] = useState(0); // 최종 점수
-  const [isWaiting, setIsWaiting] = useState(false);
   const [lives, setLives] = useState(10); // 목숨
   const [currentStage, setCurrentStage] = useState(0); // 현재 스테이지 번호
   const [imageLayout, setImageLayout] = useState(null); // 이미지 레이아웃 정보 (여백 계산)
@@ -522,18 +521,6 @@ function GamePage({ onNavigate, sessionId }) {
           <button onClick={handleGoBack} className="back-button-game">
             돌아가기
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  // 대기 화면
-  if (isWaiting) {
-    return (
-      <div className="game-page">
-        <div className="waiting">
-          <h2>다음 게임 준비 중...</h2>
-          <div className="spinner"></div>
         </div>
       </div>
     );
