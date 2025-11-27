@@ -87,8 +87,8 @@ function GamePage({ onNavigate, sessionId }) {
 
     // 새로고침 감지 및 경고
     const handleBeforeUnload = (e) => {
-      // 게임 진행 중일 때만 경고
-      if (gameRoomId && !isGameOver) {
+      // 게임 데이터가 로드되고 게임이 진행 중일 때만 경고
+      if (gameRoomId && puzzleData && !isGameOver) {
         e.preventDefault();
         e.returnValue = '게임 진행 중입니다. 새로고침하면 현재 진행 상태가 초기화됩니다.';
         return e.returnValue;
@@ -104,7 +104,7 @@ function GamePage({ onNavigate, sessionId }) {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameRoomId, isGameOver]);
+  }, [gameRoomId, puzzleData, isGameOver]);
 
   // 게임 데이터 로드
   const loadGameData = async (gameId) => {
