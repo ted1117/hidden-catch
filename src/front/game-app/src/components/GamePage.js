@@ -79,13 +79,17 @@ function GamePage({ onNavigate, sessionId }) {
 
   // 게임 초기화
   useEffect(() => {
+    console.log('[GamePage] useEffect 실행됨');
     const storedGameRoomId = localStorage.getItem('currentGameRoomId');
+    console.log('[GamePage] storedGameRoomId:', storedGameRoomId);
+    
     if (storedGameRoomId) {
       setGameRoomId(storedGameRoomId);
       loadGameData(storedGameRoomId);
     }
 
     return () => {
+      console.log('[GamePage] cleanup 실행됨');
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
@@ -98,6 +102,8 @@ function GamePage({ onNavigate, sessionId }) {
 
   // 게임 데이터 로드
   const loadGameData = async (gameId) => {
+    console.log('[loadGameData] 호출됨, gameId:', gameId);
+    console.trace('[loadGameData] 호출 스택:'); // 호출 스택 출력
     try {
       const response = await fetch(`/api/v1/games/${gameId}`);
       
@@ -107,7 +113,7 @@ function GamePage({ onNavigate, sessionId }) {
       }
 
       const data = await response.json();
-      console.log('게임 데이터 로드:', data);
+      console.log('[loadGameData] 게임 데이터 로드:', data);
       
       setGameData(data);
       setPuzzleData(data.puzzle);
