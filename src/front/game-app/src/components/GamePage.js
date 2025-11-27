@@ -147,7 +147,17 @@ function GamePage({ onNavigate, sessionId }) {
       
       // found_differences가 있으면 복구 (서버가 제공하는 경우)
       if (data.found_differences && Array.isArray(data.found_differences)) {
-        setCorrectAnswers(data.found_differences);
+        const processedDifferences = data.found_differences.map(diff => {
+          if (!diff.width || !diff.height) {
+            return {
+              ...diff,
+              width: diff.box_width || 100,
+              height: diff.box_height || 100
+            };
+          }
+          return diff;
+        });
+        setCorrectAnswers(processedDifferences);
       } else {
         setCorrectAnswers([]);
       }
@@ -255,12 +265,25 @@ function GamePage({ onNavigate, sessionId }) {
       if (response.ok) {
         const data = await response.json();
         console.log('답안 체크 응답:', data);
+        console.log('found_differences:', data.found_differences);
         
         // 현재 점수 업데이트
         setUserScore(data.current_score);
         
-        // found_differences로 정답 표시 업데이트
-        setCorrectAnswers(data.found_differences || []);
+        // found_differences로 정답 표시 업데이트 (width/height 없으면 추가)
+        const processedDifferences = (data.found_differences || []).map(diff => {
+          // width와 height가 없으면 기본값 설정 (박스 크기)
+          if (!diff.width || !diff.height) {
+            return {
+              ...diff,
+              width: diff.box_width || 100,
+              height: diff.box_height || 100
+            };
+          }
+          return diff;
+        });
+        console.log('처리된 differences:', processedDifferences);
+        setCorrectAnswers(processedDifferences);
 
         if (data.is_correct) {
           // 정답 처리
