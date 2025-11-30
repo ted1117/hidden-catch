@@ -15,6 +15,7 @@ function GamePage({ onNavigate, sessionId }) {
   const [lives, setLives] = useState(10); // 목숨
   const [currentStage, setCurrentStage] = useState(0); // 현재 스테이지 번호
   const [imageLayout, setImageLayout] = useState(null); // 이미지 레이아웃 정보 (여백 계산)
+  const [isLoading, setIsLoading] = useState(true); // 로딩 상태
   
   const originalImageRef = useRef(null);
   const modifiedImageRef = useRef(null);
@@ -115,10 +116,18 @@ function GamePage({ onNavigate, sessionId }) {
       const data = await response.json();
       console.log('[loadGameData] 게임 데이터 로드:', data);
       
+      if (!data.puzzle) {
+        console.error('[loadGameData] puzzle 데이터가 없습니다:', data);
+        alert('퍼즐 데이터를 불러오지 못했습니다. 게임을 다시 시작해주세요.');
+        onNavigate('home');
+        return;
+      }
+      
       setGameData(data);
       setPuzzleData(data.puzzle);
       setCurrentStage(data.current_stage || 0);
       setUserScore(data.current_score || 0);
+      setIsLoading(false); // 로딩 완료
       
       // found_differences가 있으면 복구
       if (data.found_differences && Array.isArray(data.found_differences)) {
@@ -145,6 +154,8 @@ function GamePage({ onNavigate, sessionId }) {
     } catch (error) {
       console.error('게임 데이터 로드 에러:', error);
       alert('게임 데이터 로드 중 오류가 발생했습니다.');
+      setIsLoading(false);
+      onNavigate('home');
     }
   };
 
@@ -508,10 +519,28 @@ function GamePage({ onNavigate, sessionId }) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // 로딩 중
+  if (isLoading) {
+    return (
+      <div className="game-page">
+        <div className="waiting">
+          <h2>게임 로딩 중...</h2>
+          <div className="spinner"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // 퍼즐 데이터 없음
   if (!puzzleData) {
     return (
       <div className="game-page">
-        <div className="error-message">이미지 데이터가 없습니다.</div>
+        <div className="error-message">
+          <h3>이미지 데이터가 없습니다.</h3>
+          <button onClick={() => onNavigate('home')} className="back-button-game">
+            홈으로 돌아가기
+          </button>
+        </div>
       </div>
     );
   }

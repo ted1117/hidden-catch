@@ -137,11 +137,93 @@ def _initialize_imagen_client():
     )
 
 
-def modify_image_with_imagen(original_image_path, detection_results):
+def modify_image_with_imagen_legacy(original_image_path, detection_results):
+    """
+    [구 버전] Imagen을 사용하여 이미지를 수정합니다.
+    """
     if not detection_results:
         raise ValueError("detection_results must not be empty.")
 
     with PILImage.open(original_image_path) as opened:
+        pil_original = opened.convert("RGB")
+        width, height = pil_original.size
+
+    # 마스크 생성 함수 호출
+    mask_image, final_prompt = _build_mask_from_detections(
+        detection_results,
+        (width, height),
+    )
+
+    # ============================================================
+    # [핵심 수정] 마스크 강제 이진화 처리 (오류 해결 파트)
+    # 1. 흑백(L) 모드로 변환
+    # 2. 128 기준으로 완전한 검은색(0)과 흰색(255)으로 나눔
+    # 3. 1-bit 픽셀(mode='1')로 변환하지 말고 'L'이나 'RGB' 유지 권장 (호환성 위해)
+    # ============================================================
+    mask_image = mask_image.convert("L").point(lambda x: 255 if x > 100 else 0)
+
+    original_bytes_io = io.BytesIO()
+    mask_bytes_io = io.BytesIO()
+
+    pil_original.save(original_bytes_io, format="PNG")
+    mask_image.save(mask_bytes_io, format="PNG")
+
+    original_bytes = original_bytes_io.getvalue()
+    mask_bytes = mask_bytes_io.getvalue()
+
+    # Reference 설정
+    raw_ref = types.RawReferenceImage(
+        reference_id=1,
+        reference_image=types.Image(image_bytes=original_bytes, mime_type="image/png"),
+    )
+
+    mask_ref = types.MaskReferenceImage(
+        reference_id=2,
+        reference_image=types.Image(image_bytes=mask_bytes, mime_type="image/png"),
+        config=types.MaskReferenceConfig(
+            mask_mode=types.MaskReferenceMode.MASK_MODE_USER_PROVIDED,
+            mask_dilation=0,  # 영역을 살짝(5%) 넓혀 경계선 어색함 방지
+        ),
+    )
+
+    client = _initialize_imagen_client()
+
+    try:
+        response = client.models.edit_image(
+            model="imagen-3.0-capability-001",
+            prompt=final_prompt,
+            reference_images=[raw_ref, mask_ref],
+            config=types.EditImageConfig(
+                edit_mode=types.EditMode.EDIT_MODE_INPAINT_INSERTION,
+                number_of_images=1,
+                output_mime_type="image/png",
+            ),
+        )
+    except Exception as e:
+        print(f"Imagen API Error Detail: {e}")
+        return None
+
+    if response.generated_images:
+        return response.generated_images[0].image.image_bytes
+
+    return None
+
+
+def modify_image_with_imagen(original_image_bytes, detection_results):
+    """
+    Imagen을 사용하여 이미지를 수정합니다.
+    """
+    if not detection_results:
+        raise ValueError("detection_results must not be empty.")
+
+    # 바이트를 BytesIO로 변환
+    image_source = (
+        original_image_bytes
+        if isinstance(original_image_bytes, io.BytesIO)
+        else io.BytesIO(original_image_bytes)
+    )
+
+    with PILImage.open(image_source) as opened:
         pil_original = opened.convert("RGB")
         width, height = pil_original.size
 

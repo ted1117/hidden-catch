@@ -30,7 +30,8 @@ from app.schemas.puzzle import (
     HitAttempt,
     PuzzleForGameResponse,
 )
-from app.worker.tasks import run_imagen_pipeline
+from app.worker.tasks import generate_puzzle_task
+from app.worker.tasks_legacy import run_imagen_pipeline
 
 
 def _build_s3_client() -> Any:
@@ -178,7 +179,8 @@ class GameService:
         slot.last_analyzed_at = None
         self._validate_upload_content_type(slot.s3_object_key)
         self.session.commit()
-        run_imagen_pipeline.delay(slot.id)
+        # run_imagen_pipeline.delay(slot.id)
+        generate_puzzle_task.delay(slot.id)
 
         slots = (
             self.session.query(GameUploadSlot)

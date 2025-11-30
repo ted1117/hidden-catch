@@ -12,5 +12,9 @@ celery_app.conf.update(
     accept_content=["json", "pickle"],
 )
 
+celery_app.conf.include = [
+    "app.worker.tasks",
+    "app.worker.tasks_legacy",
+]
 
 celery_app.autodiscover_tasks(["app.worker"])
