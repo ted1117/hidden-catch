@@ -7,7 +7,7 @@ import time
 import boto3
 from celery import chain
 from google.cloud import vision
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 from sqlalchemy import delete, select
 
 from app.core.config import settings
@@ -17,6 +17,8 @@ from app.models.puzzle import Difference, Puzzle
 from app.models.upload_slot import GameUploadSlot
 from app.worker.celery_app import celery_app
 from app.worker.detect import modify_image_with_imagen
+
+MAX_SIZE_BYTES = 27_000_000
 
 
 def _calculate_overlap_ratio(
@@ -215,6 +217,25 @@ def _process_rects_with_iou(
     return processed_rects, processed_labels
 
 
+def _reduce_image_size(image_bytes: bytes, limit: int = MAX_SIZE_BYTES) -> bytes:
+    current_bytes = image_bytes
+
+    while len(current_bytes) > limit:
+        with Image.open(io.BytesIO(current_bytes)) as img:
+            img = img.convert("RGB")
+
+            new_width = max(1, int(img.width * 0.7))
+            new_height = max(1, int(img.height * 0.7))
+
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            with io.BytesIO() as output:
+                img.save(output, format="PNG")
+                current_bytes = output.getvalue()
+
+    return current_bytes
+
+
 @celery_app.task
 def long_running_task(param: int) -> str:
     time.sleep(10)
@@ -248,11 +269,27 @@ def detect_objects_for_slot(slot_id: int):
 
         image_bytes = s3_response["Body"].read()
 
+        if len(image_bytes) > MAX_SIZE_BYTES:
+            image_bytes = _reduce_image_size(image_bytes, limit=MAX_SIZE_BYTES)
+            s3_client.put_object(
+                Bucket=settings.aws_s3_bucket_name,
+                Key=slot.s3_object_key,
+                Body=image_bytes,
+                ContentType="image/png",
+            )
+
+        # EXIF orientation으로 사진 방향 고정
         with Image.open(io.BytesIO(image_bytes)) as img:
-            image_width, image_height = img.size
+            img_with_exif = ImageOps.exif_transpose(img)
+            img_with_exif = img_with_exif.convert("RGB")
+            image_width, image_height = img_with_exif.size
+
+            normalized_output = io.BytesIO()
+            img_with_exif.save(normalized_output, format="PNG")
+            normalized_image_bytes = normalized_output.getvalue()
 
         client = vision.ImageAnnotatorClient()
-        image = vision.Image(content=image_bytes)
+        image = vision.Image(content=normalized_image_bytes)
 
         objects = client.object_localization(image=image).localized_object_annotations  # type: ignore
         if not objects:
@@ -415,27 +452,25 @@ def detect_objects_for_slot(slot_id: int):
             session.flush()
             stored_differences.append(difference)
 
-        debug_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        draw = ImageDraw.Draw(debug_image)
-        for diff in stored_differences:
-            x1, y1 = diff.x, diff.y
-            x2 = x1 + diff.width
-            y2 = y1 + diff.height
-            draw.rectangle(
-                [
-                    (x1, y1),
-                    (x2, y2),
-                ],
-                outline="red",
-                width=3,
-            )
-            if diff.label:
-                draw.text(
-                    (x1, max(0, y1 - 12)),
-                    diff.label,
-                    fill="red",
+        if settings.debug:
+            debug_image = Image.open(io.BytesIO(normalized_image_bytes)).convert("RGB")
+            draw = ImageDraw.Draw(debug_image)
+            for diff in stored_differences:
+                x1, y1 = diff.x, diff.y
+                x2 = x1 + diff.width
+                y2 = y1 + diff.height
+                draw.rectangle(
+                    [(x1, y1), (x2, y2)],
+                    outline="red",
+                    width=3,
                 )
-        debug_image.show(title=f"slot-{slot_id}-detections")
+                if diff.label:
+                    draw.text(
+                        (x1, max(0, y1 - 12)),
+                        diff.label,
+                        fill="red",
+                    )
+            debug_image.show(title=f"slot-{slot_id}-detections")
 
         slot.detected_objects = detected
         slot.analysis_status = "completed"
@@ -445,13 +480,18 @@ def detect_objects_for_slot(slot_id: int):
             existing_stage.total_difference_count = len(detected)
             existing_stage.status = "waiting_puzzle"
 
-    return {"slot_id": slot.id, "detected": detected}
+    return {
+        "slot_id": slot.id,
+        "detected": detected,
+        "image_bytes": normalized_image_bytes,
+    }
 
 
 @celery_app.task
 def edit_image_with_imagen3(payload: dict):
     slot_id = payload["slot_id"]
     detected = payload["detected"]
+    image_bytes = payload["image_bytes"]
     with get_session() as session:
         slot = session.get(GameUploadSlot, slot_id)
         if slot is None or not slot.s3_object_key:
@@ -464,16 +504,6 @@ def edit_image_with_imagen3(payload: dict):
             aws_secret_access_key=settings.aws_secret_access_key,
             region_name=settings.aws_region,
         )
-        try:
-            response = s3_client.get_object(
-                Bucket=settings.aws_s3_bucket_name, Key=s3_object_key
-            )
-            image_bytes = response["Body"].read()
-        except Exception as exc:
-            slot.analysis_status = "failed"
-            slot.analysis_error = f"S3 download failed: {exc}"
-            slot.last_analyzed_at = datetime.now()
-            return
 
         try:
             with Image.open(io.BytesIO(image_bytes)) as img:

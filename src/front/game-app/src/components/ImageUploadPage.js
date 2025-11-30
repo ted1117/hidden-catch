@@ -127,6 +127,7 @@ function ImageUploadPage({ onNavigate }) {
       }
 
       // 4. 상태 폴링 (1초마다 확인)
+      let pollTimeoutId = null;
       const pollStatus = async () => {
         const statusResponse = await fetch(`/api/v1/games/${game_id}`);
         
@@ -144,7 +145,7 @@ function ImageUploadPage({ onNavigate }) {
           onNavigate('game');
         } else {
           // 아직 준비 중이면 1초 후 재시도
-          setTimeout(pollStatus, 1000);
+          pollTimeoutId = setTimeout(pollStatus, 1000);
         }
       };
 

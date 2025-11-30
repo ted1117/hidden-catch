@@ -19,6 +19,7 @@ function GamePage({ onNavigate, sessionId }) {
   const originalImageRef = useRef(null);
   const modifiedImageRef = useRef(null);
   const timerRef = useRef(null);
+  const pollIntervalRef = useRef(null); // 폴링 인터벌 관리
   const stageStartTimeRef = useRef(null); // 스테이지 시작 시간
 
   // 이미지 로드 시 레이아웃 계산
@@ -78,36 +79,31 @@ function GamePage({ onNavigate, sessionId }) {
 
   // 게임 초기화
   useEffect(() => {
-    // localStorage에서 게임방 ID 가져오기
+    console.log('[GamePage] useEffect 실행됨');
     const storedGameRoomId = localStorage.getItem('currentGameRoomId');
+    console.log('[GamePage] storedGameRoomId:', storedGameRoomId);
+    
     if (storedGameRoomId) {
       setGameRoomId(storedGameRoomId);
       loadGameData(storedGameRoomId);
     }
 
-    // 새로고침 감지 및 경고
-    const handleBeforeUnload = (e) => {
-      // 게임 데이터가 로드되고 게임이 진행 중일 때만 경고
-      if (gameRoomId && puzzleData && !isGameOver) {
-        e.preventDefault();
-        e.returnValue = '게임 진행 중입니다. 새로고침하면 현재 진행 상태가 초기화됩니다.';
-        return e.returnValue;
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
     return () => {
+      console.log('[GamePage] cleanup 실행됨');
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameRoomId, puzzleData, isGameOver]);
+  }, []);
 
   // 게임 데이터 로드
   const loadGameData = async (gameId) => {
+    console.log('[loadGameData] 호출됨, gameId:', gameId);
+    console.trace('[loadGameData] 호출 스택:'); // 호출 스택 출력
     try {
       const response = await fetch(`/api/v1/games/${gameId}`);
       
@@ -117,35 +113,14 @@ function GamePage({ onNavigate, sessionId }) {
       }
 
       const data = await response.json();
-      console.log('게임 데이터 로드:', data);
-      
-      // 새로고침으로 인한 재로드 감지
-      const isReload = performance.getEntriesByType('navigation')[0]?.type === 'reload';
-      
-      if (isReload && data.status === 'playing') {
-        // 새로고침 경고 및 게임 재시작 확인
-        const restart = window.confirm(
-          '페이지가 새로고침되었습니다.\n' +
-          '게임 진행 상태가 초기화됩니다.\n\n' +
-          '현재 스테이지를 처음부터 다시 시작하시겠습니까?\n' +
-          '(취소 시 홈으로 돌아갑니다)'
-        );
-        
-        if (!restart) {
-          localStorage.removeItem('currentGameRoomId');
-          onNavigate('home');
-          return;
-        }
-        
-        alert('게임이 재시작됩니다. 현재 스테이지를 처음부터 시작합니다.');
-      }
+      console.log('[loadGameData] 게임 데이터 로드:', data);
       
       setGameData(data);
       setPuzzleData(data.puzzle);
       setCurrentStage(data.current_stage || 0);
       setUserScore(data.current_score || 0);
       
-      // found_differences가 있으면 복구 (서버가 제공하는 경우)
+      // found_differences가 있으면 복구
       if (data.found_differences && Array.isArray(data.found_differences)) {
         const processedDifferences = data.found_differences.map(diff => {
           if (!diff.width || !diff.height) {
@@ -390,7 +365,12 @@ function GamePage({ onNavigate, sessionId }) {
 
   // 다음 퍼즐 준비 상태 polling
   const pollNextPuzzle = () => {
-    const pollInterval = setInterval(async () => {
+    // 기존 폴링이 있으면 정리
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+    
+    pollIntervalRef.current = setInterval(async () => {
       try {
         const response = await fetch(`/api/v1/games/${gameRoomId}/stages/${currentStage}/complete`, {
           method: 'POST',
@@ -408,12 +388,14 @@ function GamePage({ onNavigate, sessionId }) {
 
           // status가 "playing"으로 바뀌면 다음 스테이지로 전환
           if (data.status === 'playing' && data.next_puzzle) {
-            clearInterval(pollInterval);
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
             console.log('다음 퍼즐 준비 완료! 전환 시작');
             moveToNextStage(data);
           } else if (data.status === 'finished' && !data.next_puzzle) {
             // 다음 퍼즐이 없으면 게임 종료
-            clearInterval(pollInterval);
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
             alert('모든 게임을 완료했습니다!');
             endGame();
           }

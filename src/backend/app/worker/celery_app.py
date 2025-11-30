@@ -7,8 +7,9 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
-    task_serializer="json",
+    task_serializer="pickle",
     result_serializer="json",
+    accept_content=["json", "pickle"],
 )
 
 
