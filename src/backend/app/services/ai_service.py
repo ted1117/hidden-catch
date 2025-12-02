@@ -32,7 +32,12 @@ def _build_s3_client() -> Any:
     return s3_client
 
 
-def _reduce_image_size(image_bytes: bytes, limit: int = MAX_SIZE_BYTES) -> bytes:
+def _reduce_image_size(
+    image_bytes: bytes,
+    limit: int = MAX_SIZE_BYTES,
+    output_format: str = "JPEG",
+    quality: int = 90,
+) -> bytes:
     """
     이미지 크기를 제한 크기 이하로 축소합니다.
 
@@ -55,7 +60,12 @@ def _reduce_image_size(image_bytes: bytes, limit: int = MAX_SIZE_BYTES) -> bytes
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             with io.BytesIO() as output:
-                img.save(output, format="PNG")
+                img.save(
+                    output,
+                    format=output_format,
+                    quality=quality,
+                    optimize=True,
+                )
                 current_bytes = output.getvalue()
 
     return current_bytes
@@ -360,7 +370,12 @@ def _modify_image_with_imagen(
     original_bytes_io = io.BytesIO()
     mask_bytes_io = io.BytesIO()
 
-    pil_original.save(original_bytes_io, format="PNG")
+    pil_original.save(
+        original_bytes_io,
+        format="JPEG",
+        quality=95,
+        optimize=True,
+    )
     mask_image.save(mask_bytes_io, format="PNG")
 
     original_bytes = original_bytes_io.getvalue()
@@ -369,7 +384,10 @@ def _modify_image_with_imagen(
     # Reference 설정
     raw_ref = types.RawReferenceImage(
         reference_id=1,
-        reference_image=types.Image(image_bytes=original_bytes, mime_type="image/png"),
+        reference_image=types.Image(
+            image_bytes=original_bytes,
+            mime_type="image/jpeg",
+        ),
     )
 
     mask_ref = types.MaskReferenceImage(
@@ -435,7 +453,7 @@ def detect_objects_logic(
             Bucket=settings.aws_s3_bucket_name,
             Key=s3_object_key,
             Body=image_bytes,
-            ContentType="image/png",
+            ContentType="image/jpeg",
         )
 
     with Image.open(io.BytesIO(image_bytes)) as img:
@@ -444,7 +462,12 @@ def detect_objects_logic(
         image_width, image_height = img_with_exif.size
 
         normalized_output = io.BytesIO()
-        img_with_exif.save(normalized_output, format="PNG")
+        img_with_exif.save(
+            normalized_output,
+            format="JPEG",
+            quality=95,
+            optimize=True,
+        )
         normalized_image_bytes = normalized_output.getvalue()
 
     client = vision.ImageAnnotatorClient()
